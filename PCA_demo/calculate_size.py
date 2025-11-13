@@ -39,13 +39,13 @@ def calculate_endpoint_real_distance(left_endpoint, right_endpoint):
     right_pixel = (int(round(right_endpoint[0])), int(round(right_endpoint[1])))
     
     # 获取左端点的真实距离信息
-    left_info = get_pixel_real_distance(left_pixel[0], left_pixel[1])
+    left_info = get_pixel_real_distance(left_pixel[0], left_pixel[1], use_nearest_depth=True)
     if not left_info or not left_info.get('success', False):
         print(f"    ❌ 无法获取左端点距离信息: {left_info.get('error', '未知错误')}")
         return None
     
     # 获取右端点的真实距离信息
-    right_info = get_pixel_real_distance(right_pixel[0], right_pixel[1])
+    right_info = get_pixel_real_distance(right_pixel[0], right_pixel[1], use_nearest_depth=True)
     if not right_info or not right_info.get('success', False):
         print(f"    ❌ 无法获取右端点距离信息: {right_info.get('error', '未知错误')}")
         return None
@@ -376,33 +376,44 @@ def calculate_strawberry_size(image_path, save_results=True, output_dir="results
             if (top_cm is not None and bottom_cm is not None and 
                 left_right_cm is not None and left_right_cm > 0):
                 
-                # 使用上下端点真实距离和左右端点真实距离估算上下两个圆锥体积
-                # 假设垂直线段为公共底面直径，上下端点到线段距离为高
-                radius_cm = left_right_cm / 2.0
-                base_area_cm2 = np.pi * radius_cm ** 2
-
-                # 上圆锥体积
-                top_volume_cm3 = (1/3) * base_area_cm2 * top_cm
-                # 下圆锥体积
-                bottom_volume_cm3 = (1/3) * base_area_cm2 * bottom_cm
-                total_volume_cm3 = top_volume_cm3 + bottom_volume_cm3
+                # 计算总垂直距离（上下端点到垂直线段距离之和）
+                total_perp_cm = top_cm + bottom_cm
+                
+                # 根据条件决定体积计算的直径和高
+                if total_perp_cm > left_right_cm:
+                    # 以 left_right_cm 为直径，total_perp_cm 为高
+                    radius_cm = left_right_cm / 2.0
+                    height_cm = total_perp_cm
+                    volume_cm3 = (1/3) * np.pi * radius_cm ** 2 * height_cm
+                    calculation_method = f"直径=左右端点距离({left_right_cm:.2f}cm), 高=垂直距离之和({total_perp_cm:.2f}cm)"
+                else:
+                    # 以 total_perp_cm 为直径，left_right_cm 为高
+                    radius_cm = total_perp_cm / 2.0
+                    height_cm = left_right_cm
+                    volume_cm3 = (1/3) * np.pi * radius_cm ** 2 * height_cm
+                    calculation_method = f"直径=垂直距离之和({total_perp_cm:.2f}cm), 高=左右端点距离({left_right_cm:.2f}cm)"
                 
                 volume_info = {
                     'strawberry_id': i + 1,
-                    'total_volume_cm3': total_volume_cm3,
-                    'top_volume_cm3': top_volume_cm3,
-                    'bottom_volume_cm3': bottom_volume_cm3,
-                    'radius_cm': radius_cm
+                    'total_volume_cm3': volume_cm3,
+                    'radius_cm': radius_cm,
+                    'height_cm': height_cm,
+                    'calculation_method': calculation_method,
+                    'total_perp_cm': total_perp_cm,
+                    'left_right_cm': left_right_cm
                 }
                 
-                print(f"  草莓 {i+1}: 总体积 = {total_volume_cm3:.2f} 立方厘米")
+                print(f"  草莓 {i+1}: 总体积 = {volume_cm3:.2f} 立方厘米")
+                print(f"    计算方式: {calculation_method}")
             else:
                 volume_info = {
                     'strawberry_id': i + 1,
                     'total_volume_cm3': None,
-                    'top_volume_cm3': None,
-                    'bottom_volume_cm3': None,
-                    'radius_cm': None
+                    'radius_cm': None,
+                    'height_cm': None,
+                    'calculation_method': None,
+                    'total_perp_cm': None,
+                    'left_right_cm': None
                 }
                 print(f"  草莓 {i+1}: 体积计算失败")
             
@@ -413,9 +424,11 @@ def calculate_strawberry_size(image_path, save_results=True, output_dir="results
             volume_results.append({
                 'strawberry_id': i + 1,
                 'total_volume_cm3': None,
-                'top_volume_cm3': None,
-                'bottom_volume_cm3': None,
-                'radius_cm': None
+                'radius_cm': None,
+                'height_cm': None,
+                'calculation_method': None,
+                'total_perp_cm': None,
+                'left_right_cm': None
             })
     
     # 9. 整理结果数据
@@ -465,8 +478,9 @@ def calculate_strawberry_size(image_path, save_results=True, output_dir="results
             # 显示体积信息
             if volume_data and volume_data['total_volume_cm3'] is not None:
                 print(f"  - 草莓体积: {volume_data['total_volume_cm3']:.2f} 立方厘米")
-                print(f"  - 上圆锥体积: {volume_data['top_volume_cm3']:.2f} 立方厘米")
-                print(f"  - 下圆锥体积: {volume_data['bottom_volume_cm3']:.2f} 立方厘米")
+                print(f"  - 计算方式: {volume_data['calculation_method']}")
+                print(f"  - 半径: {volume_data['radius_cm']:.2f} 厘米")
+                print(f"  - 高度: {volume_data['height_cm']:.2f} 厘米")
         else:
             print(f"  - 最长垂直线段: 未找到有效线段")
         print()
@@ -527,25 +541,33 @@ def calculate_straw_size(image_path=None, camera_intrinsics_path=None, depth_ima
         bottom_cm = perp_data.get('bottom_perp_distance_cm')
         left_right_cm = real_data.get('real_distance_cm')
     
-    # 使用上下端点真实距离和左右端点真实距离估算上下两个圆锥体积
-    # 假设垂直线段为公共底面直径，上下端点到线段距离为高
+    # 使用上下端点真实距离和左右端点真实距离估算体积
+    # 根据条件决定体积计算的直径和高
     if top_cm is not None and bottom_cm is not None and left_right_cm is not None and left_right_cm > 0:
-        radius_cm = left_right_cm / 2.0
-        base_area_cm2 = np.pi * radius_cm ** 2
+        # 计算总垂直距离（上下端点到垂直线段距离之和）
+        total_perp_cm = top_cm + bottom_cm
+        
+        if total_perp_cm > left_right_cm:
+            # 以 left_right_cm 为直径，total_perp_cm 为高
+            radius_cm = left_right_cm / 2.0
+            height_cm = total_perp_cm
+            calculation_method = f"直径=左右端点距离({left_right_cm:.2f}cm), 高=垂直距离之和({total_perp_cm:.2f}cm)"
+        else:
+            # 以 total_perp_cm 为直径，left_right_cm 为高
+            radius_cm = total_perp_cm / 2.0
+            height_cm = left_right_cm
+            calculation_method = f"直径=垂直距离之和({total_perp_cm:.2f}cm), 高=左右端点距离({left_right_cm:.2f}cm)"
+        
+        # 计算圆锥体积
+        volume_cm3 = (1/3) * np.pi * radius_cm ** 2 * height_cm
 
-        # 上圆锥体积
-        top_volume_cm3 = (1/3) * base_area_cm2 * top_cm
-        # 下圆锥体积
-        bottom_volume_cm3 = (1/3) * base_area_cm2 * bottom_cm
-
-        print(f"\n=== 草莓上下圆锥体积估算 ===")
-        print(f"  公共底面半径: {radius_cm:.2f} 厘米")
-        print(f"  上圆锥高: {top_cm:.2f} 厘米  -> 体积: {top_volume_cm3:.2f} 立方厘米")
-        print(f"  下圆锥高: {bottom_cm:.2f} 厘米  -> 体积: {bottom_volume_cm3:.2f} 立方厘米")
-        print(f"  总体积: {top_volume_cm3 + bottom_volume_cm3:.2f} 立方厘米")
-        # 计算上下两个圆锥体积之和
-        total_volume_cm3 = top_volume_cm3 + bottom_volume_cm3
-        return top_cm, bottom_cm, left_right_cm, total_volume_cm3
+        print(f"\n=== 草莓体积估算 ===")
+        print(f"  计算方式: {calculation_method}")
+        print(f"  半径: {radius_cm:.2f} 厘米")
+        print(f"  高度: {height_cm:.2f} 厘米")
+        print(f"  总体积: {volume_cm3:.2f} 立方厘米")
+        
+        return top_cm, bottom_cm, left_right_cm, volume_cm3
     
 
 def process_folder(folder_path, output_dir="results"):
@@ -601,7 +623,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='草莓尺寸计算工具')
-    parser.add_argument('--input', type=str, default=r'E:\Recent Works\2D-sizing\data\D405_dataset\images\D405_0007_20251112_170543.png',
+    parser.add_argument('--input', type=str, default=r'E:\Recent Works\2D-sizing\data\D405_dataset\images\D405_0024_20251112_181440.png',
                        help='输入图像路径或文件夹路径')
     parser.add_argument('--output', type=str, default=r'E:\Recent Works\2D-sizing\results',
                        help='输出目录 (默认: results)')

@@ -63,15 +63,15 @@ class RealDistanceCalculator:
         print(f"右端点像素索引: ({right_pixel[0]}, {right_pixel[1]})")
         
         # 获取左端点的真实距离信息
-        left_info = get_pixel_real_distance(left_pixel[0], left_pixel[1])
+        left_info = get_pixel_real_distance(left_pixel[0], left_pixel[1], use_nearest_depth=True)
         if not left_info or not left_info.get('success', False):
-            print(f"❌ 无法获取左端点距离信息: {left_info.get('error', '未知错误')}")
+            print(f"    ❌ 无法获取左端点距离信息: {left_info.get('error', '未知错误')}")
             return None
         
         # 获取右端点的真实距离信息
-        right_info = get_pixel_real_distance(right_pixel[0], right_pixel[1])
+        right_info = get_pixel_real_distance(right_pixel[0], right_pixel[1], use_nearest_depth=True)
         if not right_info or not right_info.get('success', False):
-            print(f"❌ 无法获取右端点距离信息: {right_info.get('error', '未知错误')}")
+            print(f"    ❌ 无法获取右端点距离信息: {right_info.get('error', '未知错误')}")
             return None
         
         # 提取3D坐标

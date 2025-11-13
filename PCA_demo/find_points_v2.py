@@ -534,13 +534,12 @@ class StrawberryPointFinder:
                         center_x = (top_endpoint[0] + bottom_endpoint[0]) / 2
                         center_y = (top_endpoint[1] + bottom_endpoint[1]) / 2
                         
-                        # 显示体积信息
+                        # 显示体积信息（红色）
                         volume_text = f"Volume: {volume_data['total_volume_cm3']:.2f} cm3"
-                        ax.text(center_x, center_y - 30, volume_text, 
+                        ax.text(center_x, center_y-70, volume_text, 
                                fontsize=12, fontweight='bold', 
                                ha='center', va='bottom',
-                               bbox=dict(boxstyle="round,pad=0.3", facecolor='lightblue', alpha=0.8),
-                               color='darkblue', zorder=10)
+                               color='red')  # 设置字体颜色为红色
                 
                 # 绘制风筝形状的连接线（连接左右端点和上下端点）
                 if line_points is not None:
